@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estereograma de Palavras</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b675f;
+    --line: #d9d4c8; --accent: #2f5bd3; --accent-ink: #ffffff;
+    --hl: #ffd54a; --ok: #1f7a3a; --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #1f1f1c; --ink: #ecebe6; --muted: #a29e94;
+      --line: #38362f; --accent: #7a9cff; --accent-ink: #10131c;
+      --hl: #8a6d00; --ok: #6fd28f; --bad: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  form { display: flex; gap: 8px; margin-bottom: 16px; }
+  input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; font: inherit; color: var(--ink);
+         background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  button { padding: 10px 16px; font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer;
+           border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+  button.ghost { background: transparent; color: var(--accent); }
+  button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
+  .wall { background: #fff; color: #111; border: 1px solid var(--line); border-radius: 8px;
+          padding: 20px; overflow-x: auto; }
+  .wall pre { margin: 0; font: var(--fs, 16px)/1.2 "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+  .wall mark { background: transparent; color: inherit; }
+  .guias { position: relative; height: 1.2em; font: var(--fs, 16px)/1.2 "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+  .guias span { position: absolute; top: 50%; width: .75em; height: .75em; border-radius: 50%;
+                background: #111; transform: translate(-50%, -50%); }
+  .wall.reveal mark { background: #ffd54a; }
+  .ajustes { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: -4px 0 8px; font-size: .9rem; }
+  .ajustes .grupo { display: inline-flex; gap: 4px; }
+  .ajustes button { padding: 6px 12px; font-size: .9rem; }
+  .tam { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+  .dica { color: var(--muted); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  .conf { margin-left: auto; font-size: .9rem; }
+  .conf.ok { color: var(--ok); } .conf.bad { color: var(--bad); }
+  details { margin-top: 24px; color: var(--muted); }
+  details summary { cursor: pointer; color: var(--ink); }
+  .warn { color: var(--bad); font-size: .9rem; min-height: 1.4em; margin: 0 0 8px; }
+  .analise { margin-top: 32px; }
+  .analise h2, .imagem h2 { font-size: 1.15rem; margin: 0 0 4px; }
+  .imagem { margin-top: 32px; }
+  .img-wrap { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow-x: auto; }
+  #imagem { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .mapa-wrap { background: #1b1b1e; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+  #mapa { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 0; font-size: .85rem; color: var(--muted); }
+  .legenda i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .leitura { font-size: .9rem; margin: 10px 0 0; }
+  .leitura code { font: .9em "DejaVu Sans Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Estereograma de Palavras</h1>
+  <p class="sub">Digite uma frase. Ela fica escondida no meio de palavras aleatórias e salta em 3D, uma palavra por linha.</p>
+
+  <form id="f">
+    <input id="frase" type="text" value="o gato subiu no telhado" aria-label="Frase escondida" autocomplete="off">
+  </form>
+  <div class="ajustes">
+    <span class="grupo" role="group" aria-label="Jeito de olhar">
+      <button class="ghost" id="olhar-par" type="button" aria-pressed="true">Olhar paralelo</button>
+      <button class="ghost" id="olhar-cruz" type="button" aria-pressed="false">Olhar cruzado</button>
+    </span>
+    <label class="tam">Tamanho <input id="tamanho" type="range" min="10" max="24" step="1" value="16"></label>
+    <span class="dica" id="dica-tam"></span>
+  </div>
+  <p class="warn" id="warn"></p>
+
+  <div class="wall" id="wall"><pre id="out"></pre><div class="guias" id="guias" aria-hidden="true"><span></span><span></span></div><pre id="out2"></pre></div>
+
+  <div class="actions">
+    <button class="ghost" id="copy" type="button">Copiar texto</button>
+    <button class="ghost" id="png" type="button">Baixar imagem</button>
+    <button class="ghost" id="reveal" type="button" aria-pressed="false">Mostrar resposta</button>
+    <span class="conf" id="conferencia"></span>
+  </div>
+
+  <section class="imagem">
+    <h2>Imagem</h2>
+    <p class="sub">A mesma parede desenhada como figura, com os pontos no meio. É o arquivo que o "Baixar imagem" salva.</p>
+    <div class="img-wrap"><img id="imagem" alt="Estereograma gerado com a frase escondida"></div>
+  </section>
+
+  <section class="analise">
+    <h2>Análise da imagem</h2>
+    <p class="sub">A imagem gerada passa pelo mesmo decodificador usado em fotos de estereogramas. Ele não lê o texto: compara cada pedaço da imagem com cópias dela deslocadas pro lado e mede de quanto em quanto ela se repete. Onde a repetição é mais curta, aquele ponto salta pra frente (no olhar cruzado é o contrário: mais longa).</p>
+    <div class="mapa-wrap"><canvas id="mapa" width="10" height="10"></canvas></div>
+    <div class="legenda">
+      <span><i style="background:#2b4a9b"></i>fundo (repete a cada P)</span>
+      <span><i style="background:#ffd54a"></i>1 nível à frente (1 caractere de diferença)</span>
+      <span><i style="background:#ff8a3d"></i>2+ níveis à frente</span>
+      <span><i style="background:#e5484d"></i>atrás do fundo</span>
+      <span><i style="background:#3a3a40"></i>margem (sem letras por perto)</span>
+    </div>
+    <p class="leitura" id="leitura">Analisando…</p>
+  </section>
+
+  <details>
+    <summary>Como enxergar</summary>
+    <p>Use os dois pontos pretos no meio do texto: ao desfocar, eles se desdobram em quatro; ajuste até os dois do meio se juntarem e você ver <b>três</b> pontos. Nessa hora a frase aparece.</p>
+    <p>Aproxime o rosto da tela até quase encostar, relaxe os olhos como se olhasse algo bem atrás dela, e vá se afastando devagar sem focar. Quando as repetições se encaixarem, as palavras da frase aparecem flutuando à frente, de cima para baixo. Se aparecerem "afundadas", você está cruzando os olhos: aperte <b>Olhar cruzado</b>.</p>
+    <p><b>Olhar cruzado</b> é o jeito que muita gente acha mais fácil: segure um dedo entre os olhos e a tela, olhe pro dedo e vá aproximando ou afastando até os dois pontos pretos virarem três. Aí tire o dedo devagar sem mudar o olhar.</p>
+    <p>Se nada funcionar, mexa no <b>Tamanho</b>: pra olhar paralelo, cada repetição tem que ser menor que a distância entre os seus olhos (algo entre 3 e 5 cm na tela costuma ser o mais fácil).</p>
+  </details>
+</main>
+
+<script>
+// ---- Vocabulário ---------------------------------------------------------
+// Mesma regra do estereograma original ("know Never pit" ← "known Never it"):
+//  - a palavra ANTES da escondida perde a ÚLTIMA letra   (gatos → gato)
+//  - a palavra DEPOIS ganha uma letra no COMEÇO           (ato → rato)
+// Assim o trecho que muda de lugar é exatamente " palavra ", sem pedaços das vizinhas.
+const lista = s => s.split(/\s+/).filter(Boolean);
+const NOMES = lista(`casa bolo pato mesa pedra cama faca peixe barco gato sapo vaca porta janela
+livro copo garfo bota meia saia chuva folha fruta vela rosa cadeira caneca escada lago ponte
+cidade praia estrela roda pipa sino vaso dedo cabelo chapéu sapato camisa panela gaveta
+tapete cortina mochila tesoura cenoura banana laranja tomate abelha baleia coruja girafa
+formiga macaco coelho castelo foguete palhaço pirata`);
+const VERBOS = lista(`falar cantar amar olhar morar tocar nadar pular jogar andar chorar voltar
+levar passar gritar sonhar contar ficar pintar mudar lavar comer beber correr viver vender
+partir abrir dormir subir remar tomar somar pescar brincar dançar pensar chegar lembrar
+acordar esperar escrever aprender saltar rezar caçar jantar`);
+// A: perde a última letra
+const ANTES = [...NOMES.filter(n => /[aeiouáéíóúâêôã]$/.test(n)).map(n => n + 's'), ...VERBOS,
+  'cantor', 'pastor', 'motor', 'cartaz'].map(longa => ({ longa, curta: longa.slice(0, -1) }));
+// B: ganha uma letra no começo ("ato:rpg" = rato, pato, gato)
+const DEPOIS = lista(`ato:rpgmfj ar:mlpb rio:ft asa:c uva:l oca:btfr obra:cs ela:vtbcs ama:clfdg
+aro:crf ovo:np ano:pcd era:pfc ira:lmt ema:tl alto:s arco:bm elo:psg ilha:pf ouro:cl isca:p
+olho:m ala:bmfscvg alma:cp onda:rs ave:n aço:lm ida:v ora:hfm osso:nf alva:sm unha:c uso:f`)
+  .flatMap(s => { const [curta, ls] = s.split(':'); return [...ls].map(l => ({ curta, longa: l + curta })); });
+// Enfeites: palavras longas e diferentes entre si. Palavras curtas e repetidas ("cá cá lá")
+// se encaixam com elas mesmas fora do lugar e mancham o fundo.
+const ENFEITES = [...new Set([...NOMES, ...lista(`borboleta caderno relógio lâmpada tartaruga chocolate
+espelho floresta vulcão dragão sorvete biscoito varanda almofada jardim elefante pinguim morango
+pepino queijo manteiga montanha cachorro abacaxi bicicleta travesseiro cebola farol navio violão
+tambor trompete planeta cometa`)])];
+
+// ---- Aleatoriedade --------------------------------------------------------
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// ---- Cores (ideia 1) --------------------------------------------------------
+// Cada palavra ganha um "azulejo" colorido atrás das letras. A cor anda JUNTO com a palavra:
+// quando " w " muda de lugar (P-1), o azulejo dela muda junto; "gatos"/"gato" e "ato"/"rato"
+// mantêm a mesma cor. Assim a cor repete exatamente como o texto e vira um alvo grande e
+// borrado pros olhos travarem, sem contradizer o relevo.
+const PALETA = ['#ff8a80', '#ffd54a', '#8fd694', '#82b1ff', '#d7a6ff', '#ffb067', '#5fd3c6', '#ff9ccf'];
+// cores por caractere de uma sequência de palavras (cada uma seguida de espaço); -1 = espaço
+const coresDe = (toks, perm) => toks.flatMap((w, i) => [...Array(w.length).fill(perm[i % perm.length]), -1]);
+const novaPerm = () => shuffle([...PALETA.keys()]);
+
+// Palavras de enfeite DIFERENTES (nenhuma de `usadas`) que, cada uma seguida de espaço,
+// somam exatamente `n` caracteres.
+function preencher(n, banco, usadas = new Set()) {
+  if (n === 0) return [];
+  const min = Math.min(...banco.map(w => w.length)) + 1;
+  for (let t = 0; t < 100; t++) {
+    const out = [], ja = new Set(usadas); let resto = n;
+    while (resto > 0) {
+      const ok = banco.filter(w => { const r = resto - w.length - 1; return !ja.has(w) && (r === 0 || r >= min); });
+      if (!ok.length) break;
+      const w = pick(ok); out.push(w); ja.add(w); resto -= w.length + 1;
+    }
+    if (resto === 0) return out;
+  }
+  return null;
+}
+
+// Mancha: quanto um pedaço (que se repete a cada P) se parece consigo mesmo deslocado de
+// poucas letras. O decodificador procura repetições entre 0,75·P e 1,1·P; um trecho igual a
+// k letras de distância (k ≤ P/4) também "encaixa" ali, no lugar errado, e mancha o fundo.
+function mancha(c) {
+  const P = c.length, s = c + c + c, K = Math.floor(P / 4); let pena = 0;
+  for (let k = 1; k <= K; k++) {
+    let run = 0, letra = false;
+    for (let j = P - K; j <= 2 * P + K; j++) {
+      if (j < 2 * P + K && s[j] === s[j + k]) { run++; letra ||= s[j] !== ' '; continue; }
+      if (run >= 2 && letra) pena += (run - 1) ** 2;
+      run = 0; letra = false;
+    }
+  }
+  return pena;
+}
+
+// Um "pedaço" de P caracteres com a palavra escondida entre A e B.
+// chunk1 = ... gatos w ato  ...   (antes do relevo)
+// chunk2 = ... gato  w rato ...   (A perdeu a última letra, B ganhou a primeira: mesmo tamanho)
+// Entre os candidatos válidos, fica o que menos se parece consigo mesmo.
+// Visão cruzada: o contrário. chunk1 = gato w rato, chunk2 = gatos w ato → " w " repete a
+// cada P+1, e com os olhos cruzados isso também salta pra FRENTE.
+function pedacoComPalavra(w, P, antesL, depoisL, enfeites, cruzado = false) {
+  let melhor = null;
+  for (let t = 0, achados = 0; t < 4000 && achados < 150; t++) {
+    const A = pick(antesL), B = pick(depoisL);
+    const resto = P - (A.longa.length + 1 + w.length + 1 + B.curta.length + 1);
+    if (resto < 0) continue;
+    const pad = preencher(resto, enfeites, new Set([A.longa, A.curta, B.longa, B.curta, w]));
+    if (!pad) continue;
+    achados++;
+    const k = Math.floor(Math.random() * (pad.length + 1));
+    const antes = pad.slice(0, k), depois = pad.slice(k);
+    const [a1, b1, a2, b2] = cruzado ? [A.curta, B.longa, A.longa, B.curta] : [A.longa, B.curta, A.curta, B.longa];
+    const c1 = [...antes, a1, w, b1, ...depois].join(' ') + ' ';
+    const c2 = [...antes, a2, w, b2, ...depois].join(' ') + ' ';
+    const offW = (antes.length ? antes.join(' ').length + 1 : 0) + a2.length + 1;
+    const nota = mancha(c1) + mancha(c2);
+    const perm = novaPerm();
+    const k1 = coresDe([...antes, a1, w, b1, ...depois], perm);
+    const k2 = coresDe([...antes, a2, w, b2, ...depois], perm);
+    if (!melhor || nota < melhor.nota) melhor = { c1, c2, k1, k2, offW, nota };
+    if (nota === 0) break;
+  }
+  return melhor;
+}
+
+// ---- Geração --------------------------------------------------------------
+function gerar(frase, cruzado = false) {
+  const palavras = frase.split(/\s+/).map(w => w.replace(/[^\p{L}\p{N}'-]/gu, '')).filter(Boolean);
+  if (!palavras.length) return { erro: 'Digite pelo menos uma palavra.' };
+  const maior = Math.max(...palavras.map(w => w.length));
+  const P = Math.max(18, maior + 11);          // largura da repetição (em caracteres)
+  const L = Math.max(72, P * 5);               // largura da linha
+  const C = Math.floor(L / 2);                 // coluna central onde as palavras saltam
+  const reps = Math.ceil(L / P) + 2;
+
+  // as palavras da frase nunca aparecem como enfeite, nem em plural/singular
+  const proibidas = new Set(palavras.flatMap(w => [w, w.toLowerCase(), w.toLowerCase() + 's', w.toLowerCase().replace(/s$/, '')]));
+  const livre = p => !proibidas.has(p.longa) && !proibidas.has(p.curta);
+  const antesL = ANTES.filter(livre), depoisL = DEPOIS.filter(livre);
+  const enfeites = ENFEITES.filter(w => !proibidas.has(w));
+
+  const linhas = [];                            // { texto, marca: [ini, fim] | null }
+  const linhaEnfeite = () => {
+    let melhor = null;
+    for (let t = 0; t < 150; t++) {
+      const pad = preencher(P, enfeites);
+      if (!pad) continue;
+      const c = pad.join(' ') + ' ', nota = mancha(c);
+      if (!melhor || nota < melhor.nota) melhor = { c, k: coresDe(pad, novaPerm()), nota };
+      if (nota === 0) break;
+    }
+    const ini = Math.floor(Math.random() * P);
+    const kk = Array(reps + 1).fill(melhor.k).flat();
+    return { texto: melhor.c.repeat(reps + 1).slice(ini, ini + L), cores: kk.slice(ini, ini + L), marca: null };
+  };
+
+  linhas.push(linhaEnfeite(), linhaEnfeite());
+  // As palavras não ficam numa coluna reta: descem numa diagonal suave com uma leve curva
+  // (o sentido da diagonal é sorteado). `centro(i, w)` = coluna do meio da i-ésima palavra.
+  const n = palavras.length, lado = Math.random() < 0.5 ? -1 : 1;
+  const centro = (i, w) => {
+    const t = n > 1 ? i / (n - 1) : 0.5;
+    const x = C + lado * P * 0.8 * (t - 0.5) + P * 0.35 * (Math.sin(Math.PI * t) - 0.64);
+    const meia = Math.ceil(w.length / 2);
+    // à esquerda precisa caber a cópia anterior (P−1 antes) e a primeira faixa sem referência
+    return Math.round(Math.min(L - meia - 3, Math.max(Math.ceil(P * 1.1) + meia + 3, x)));
+  };
+  for (const [i, w] of palavras.entries()) {
+    const p = pedacoComPalavra(w, P, antesL, depoisL, enfeites, cruzado);
+    if (!p) return { erro: `Não consegui encaixar "${w}".` };
+    const seq = p.c1.repeat(reps) + p.c2.repeat(reps);
+    const posW = reps * P + p.offW;               // a ocorrência que salta: a 1ª do chunk2
+    const Ci = centro(i, w);
+    const ini = posW + Math.floor(w.length / 2) - Ci;
+    const texto = seq.slice(ini, ini + L);
+    const kseq = [...Array(reps).fill(p.k1).flat(), ...Array(reps).fill(p.k2).flat()];
+    linhas.push({ texto, cores: kseq.slice(ini, ini + L), marca: [posW - ini, posW - ini + w.length], centro: Ci });
+    linhas.push(linhaEnfeite());
+  }
+  linhas.push(linhaEnfeite());
+  // passo: de quanto em quanto a palavra escondida se repete (P−1 paralelo, P+1 cruzado)
+  return { linhas, P, palavras, cruzado, passo: cruzado ? P + 1 : P - 1 };
+}
+
+// Conferência: mede a repetição caractere a caractere, como o decodificador de imagem.
+// Fundo tem que repetir a cada P; a palavra escondida, a cada `passo`.
+function conferir({ linhas, P, passo }) {
+  let ok = true;
+  for (const { texto, marca } of linhas) {
+    if (!marca) {
+      for (let x = P; x < texto.length; x++) if (texto[x] !== texto[x - P]) ok = false;
+    } else {
+      const [a, b] = marca;
+      for (let x = a; x < b; x++) if (texto[x] !== texto[x - passo]) ok = false;
+    }
+  }
+  return ok;
+}
+
+// ---- Interface ------------------------------------------------------------
+const $ = id => document.getElementById(id);
+let atual = null;
+
+function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+function render() {
+  $('warn').textContent = '';
+  const r = gerar($('frase').value, cruzado);
+  if (r.erro) { $('warn').textContent = r.erro; return; }
+  if (r.palavras.length > 14) $('warn').textContent = `Frase longa (${r.palavras.length} palavras): a imagem fica bem alta.`;
+  atual = r;
+  parede(r);
+  _resto(r);
+}
+
+// Parede em HTML: azulejos coloridos; com "Mostrar resposta", texto puro com as cópias marcadas.
+function parede(r) {
+  // "Mostrar resposta" destaca as DUAS cópias que os olhos juntam: a que salta e a
+  // anterior, P-1 caracteres antes. Ao desfocar, as duas amarelas viram uma só, flutuando.
+  const pinta = (texto, cores) => {
+    let h = '', i = 0;
+    while (i < texto.length) {
+      let j = i; while (j < texto.length && cores[j] === cores[i]) j++;
+      const t = esc(texto.slice(i, j));
+      h += cores[i] < 0 ? t : `<span style="background:${PALETA[cores[i]]}">${t}</span>`; i = j;
+    }
+    return h;
+  };
+  const html = r.linhas.map(({ texto, cores, marca }) => {
+    if (!$('wall').classList.contains('reveal')) return pinta(texto, cores);
+    if (!marca) return esc(texto);
+    const [a, b] = marca, d = r.passo;
+    return esc(texto.slice(0, a - d)) + '<mark>' + esc(texto.slice(a - d, b - d)) + '</mark>' +
+           esc(texto.slice(b - d, a)) + '<mark>' + esc(texto.slice(a, b)) + '</mark>' + esc(texto.slice(b));
+  });
+  // os pontos ficam numa linha vazia própria, no meio do quadro: não cobrem nenhuma letra
+  const g = linhaDosPontos(r.linhas);
+  $('out').innerHTML = html.slice(0, g + 1).join('\n');
+  $('out2').innerHTML = html.slice(g + 1).join('\n');
+}
+
+function _resto(r) {
+  // Com o olhar certo, os dois viram três, e o do meio fica firme.
+  const [c1, c2] = colunasGuia(r);
+  const sp = $('guias').children;
+  sp[0].style.left = `${c1 + 0.5}ch`; sp[1].style.left = `${c2 + 0.5}ch`;
+  const ok = conferir(r);
+  $("conferencia").textContent = ok ? `✓ conferido: ${r.palavras.length} palavra(s) em 3D` : '✗ falhou na conferência, gere de novo';
+  $("conferencia").className = 'conf ' + (ok ? 'ok' : 'bad');
+  $('leitura').textContent = 'Analisando…';
+  aplicarTamanho();
+  setTimeout(() => mostrarAnalise(r), 20);
+}
+
+// ---- Tamanho e jeito de olhar -----------------------------------------------
+let cruzado = false, tamanho = 16;
+
+// Largura de uma repetição na tela. Pra olhar paralelo ela tem que ser menor que a distância
+// entre os olhos (~6 cm); entre 3 e 5 cm costuma ser o mais confortável.
+function larguraRepeticao(P) {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `${tamanho}px "DejaVu Sans Mono", Menlo, Consolas, monospace`;
+  const px = P * ctx.measureText('M').width;
+  return { px: Math.round(px), cm: px * 2.54 / 96 };
+}
+
+function aplicarTamanho() {
+  $('wall').style.setProperty('--fs', tamanho + 'px');
+  if (!atual) return;
+  const { cm } = larguraRepeticao(atual.P);
+  const conselho = cruzado ? '' : cm > 5.5 ? ' (largo: diminua)' : cm < 2.5 ? ' (estreito: pode aumentar)' : ' (boa faixa)';
+  $('dica-tam').textContent = `cada repetição ≈ ${cm.toFixed(1).replace('.', ',')} cm na tela${conselho}`;
+  desenharImagem(atual);
+}
+
+// A imagem usa o mesmo tamanho do texto (na tela tem a mesma largura de repetição),
+// desenhada em alta resolução pra ficar nítida.
+function desenharImagem(r) {
+  const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  const cv = desenhar(r.linhas, tamanho * dpr, colunasGuia(r)).cv;
+  $('imagem').src = cv.toDataURL('image/png');
+  $('imagem').style.width = cv.width / dpr + 'px';
+}
+
+// ---- Imagem ---------------------------------------------------------------
+// Desenha caractere a caractere numa grade fixa: garante a repetição exata em pixels.
+// Pontos separados por P (o passo do fundo). O esquerdo fica embaixo do meio da cópia
+// anterior da palavra; o direito, 1 coluna à direita do meio da cópia que salta.
+function colunasGuia({ linhas, P, passo = P - 1 }) {
+  // acompanham a palavra mais perto da linha dos pontos (as palavras seguem uma curva)
+  const g = linhaDosPontos(linhas);
+  const perto = linhas.map((l, i) => ({ l, i })).filter(o => o.l.marca)
+    .sort((a, b) => Math.abs(a.i - g - 0.5) - Math.abs(b.i - g - 0.5))[0];
+  const C = perto ? perto.l.centro : Math.floor(linhas[0].texto.length / 2);   // meio da palavra que salta
+  return [C - passo, C - passo + P];
+}
+
+// Índice da linha de enfeite mais perto do meio do quadro: a linha vazia com os pontos
+// entra logo depois dela.
+function linhaDosPontos(linhas) {
+  const meio = (linhas.length - 1) / 2;
+  return linhas.map((l, i) => i).filter(i => !linhas[i].marca && i < linhas.length - 1)
+    .sort((a, b) => Math.abs(a + 0.5 - meio) - Math.abs(b + 0.5 - meio))[0];
+}
+
+// Texto para copiar: inclui a linha dos pontos (•) no mesmo lugar.
+function textoComPontos(r) {
+  const g = linhaDosPontos(r.linhas), [c1, c2] = colunasGuia(r);
+  const pts = [...' '.repeat(r.linhas[0].texto.length)]; pts[c1] = pts[c2] = '•';
+  const t = r.linhas.map(l => l.texto);
+  t.splice(g + 1, 0, pts.join('').trimEnd());
+  return t.join('\n');
+}
+
+function desenhar(linhas, fs, guias = null) {
+  const lh = Math.round(fs * 1.2), pad = Math.round(fs * 1.6);
+  const font = `${fs}px "DejaVu Sans Mono", Menlo, Consolas, monospace`;
+  const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+  ctx.font = font;
+  const cw = ctx.measureText('M').width;
+  const g = guias ? linhaDosPontos(linhas) : Infinity;
+  const linhaY = y => pad + (y > g ? y + 1 : y) * lh;     // pula a linha dos pontos
+  cv.width = Math.ceil(cw * linhas[0].texto.length + pad * 2);
+  cv.height = lh * (linhas.length + (guias ? 1 : 0)) + pad * 2;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  // azulejos: um retângulo por caractere, da cor da palavra (bordas arredondadas pro pixel
+  // inteiro, pra repetição em pixels ficar igual à do texto)
+  const bx = x => Math.round(pad + x * cw);
+  linhas.forEach((l, y) => (l.cores || []).forEach((k, x) => {
+    if (k < 0) return;
+    ctx.fillStyle = PALETA[k]; ctx.fillRect(bx(x), linhaY(y) + 1, bx(x + 1) - bx(x), lh - 2);
+  }));
+  ctx.fillStyle = '#111'; ctx.font = font; ctx.textBaseline = 'top';
+  linhas.forEach((l, y) => [...l.texto].forEach((ch, x) => ctx.fillText(ch, pad + x * cw, linhaY(y))));
+  const yc = guias ? pad + (g + 1) * lh + lh / 2 : 0;
+  if (guias) for (const c of guias) { ctx.beginPath(); ctx.arc(pad + (c + 0.5) * cw, yc, fs * 0.38, 0, Math.PI * 2); ctx.fill(); }
+  return { cv, cw, lh, pad, font, linhaY, yc };
+}
+
+// ---- Decodificador genérico (só pixels) -----------------------------------
+// 1) período base: deslocamento que melhor casa a imagem consigo mesma
+// 2) para cada pixel, o deslocamento d em [0.75P, 1.1P] que melhor casa uma janela
+//    em volta dele com a mesma janela d pixels à esquerda (block matching)
+// 3) profundidade = P - d  (>0: mais perto)
+// sinal = −1 no modo cruzado: lá a palavra repete a cada P+1, e isso é "à frente"
+function analisar(cv, sinal = 1) {
+  const W = cv.width, H = cv.height;
+  const px = cv.getContext('2d').getImageData(0, 0, W, H).data;
+  const I = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) I[i] = 1 - (px[4*i] * 0.299 + px[4*i+1] * 0.587 + px[4*i+2] * 0.114) / 255;
+
+  let P = 0, melhor = Infinity;
+  for (let d = Math.floor(W / 12); d <= Math.floor(W / 3); d++) {
+    let s = 0, n = 0;
+    for (let y = 0; y < H; y += 2) { const r = y * W; for (let x = d; x < W; x += 2) { s += Math.abs(I[r + x] - I[r + x - d]); n++; } }
+    if (s / n < melhor) { melhor = s / n; P = d; }
+  }
+
+  const dmin = Math.round(P * 0.75), dmax = Math.round(P * 1.1), R = 5, W1 = W + 1;
+  const custo = new Float32Array(W * H).fill(Infinity), disp = new Int16Array(W * H);
+  // primeira faixa (x < dmax): não tem nada à esquerda, então compara com a cópia à DIREITA
+  const faixa = Math.min(W, dmax + R + 1);
+  const custoE = new Float32Array(faixa * H).fill(Infinity), dispE = new Int16Array(faixa * H);
+  const S = new Float64Array(W1 * (H + 1));
+  const caixa = (x, y) => {
+    const x0 = Math.max(0, x - R), x1 = Math.min(W, x + R + 1), y0 = Math.max(0, y - R), y1 = Math.min(H, y + R + 1);
+    return S[y1 * W1 + x1] - S[y0 * W1 + x1] - S[y1 * W1 + x0] + S[y0 * W1 + x0];
+  };
+  for (let d = dmin; d <= dmax; d++) {
+    for (let y = 0; y < H; y++) {
+      let linha = 0; const r = y * W;
+      for (let x = 0; x < W; x++) {
+        linha += x < d ? 1 : Math.abs(I[r + x] - I[r + x - d]);
+        S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha;
+      }
+    }
+    for (let y = 0; y < H; y++) for (let x = d; x < W; x++) {
+      const c = caixa(x, y), i = y * W + x;
+      if (c < custo[i]) { custo[i] = c; disp[i] = d; }
+    }
+    for (let y = 0; y < H; y++) {
+      let linha = 0; const r = y * W;
+      for (let x = 0; x < faixa; x++) {
+        linha += x + d < W ? Math.abs(I[r + x] - I[r + x + d]) : 1;
+        S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha;
+      }
+    }
+    for (let y = 0; y < H; y++) for (let x = 0; x < dmax; x++) {
+      const c = caixa(x, y), i = y * faixa + x;
+      if (c < custoE[i]) { custoE[i] = c; dispE[i] = d; }
+    }
+  }
+  // janelas sem tinta casam com qualquer deslocamento: marcar como "sem informação"
+  for (let y = 0; y < H; y++) {
+    let linha = 0; const r = y * W;
+    for (let x = 0; x < W; x++) { linha += I[r + x]; S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha; }
+  }
+  const prof = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    // Na primeira faixa o ponto é a cópia da ESQUERDA do par; o relevo do par já aparece na
+    // cópia da direita. Então ali só mostra fundo ou "atrás", senão a palavra apareceria duas vezes.
+    prof[i] = caixa(x, y) < 2 ? NaN : x < dmax ? Math.min(0, sinal * (P - dispE[y * faixa + x])) : sinal * (P - disp[i]);
+  }
+  return { P, prof, W, H };
+}
+
+function mostrarAnalise(r) {
+  const t0 = performance.now();
+  const img = desenhar(r.linhas, 14, colunasGuia(r));   // a mesma imagem do PNG, com os pontos
+  const { P, prof, W, H } = analisar(img.cv, r.cruzado ? -1 : 1);
+  const cv = $('mapa'), ctx = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  const out = ctx.createImageData(W, H), cor = (i, c) => { out.data.set([...c, 255], 4 * i); };
+  const cw = img.cw;
+  // nível bruto por pixel: 0 = atrás, 1 = fundo, 2 = 1 à frente, 3 = 2+ à frente; -1 = sem informação
+  const bruto = new Int8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const p = prof[i];
+    if (Number.isNaN(p)) { bruto[i] = -1; continue; }
+    const n = Math.round(p / cw);
+    bruto[i] = n < 0 ? 0 : n === 0 ? 1 : n === 1 ? 2 : 3;
+  }
+  // filtro de moda: cada pixel assume o nível mais comum ao redor (tira o chuvisco nas bordas das letras)
+  const RX = 6, RY = 5, W1 = W + 1, conta = [0, 1, 2, 3].map(() => new Int32Array(W1 * (H + 1)));
+  for (let k = 0; k < 4; k++) {
+    const S = conta[k];
+    for (let y = 0; y < H; y++) { let linha = 0; for (let x = 0; x < W; x++) { linha += bruto[y * W + x] === k; S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha; } }
+  }
+  const niveis = new Int8Array(W * H);          // em "níveis à frente": -1 atrás, 0 fundo, 1, 2
+  const COR = [[229, 72, 77], [43, 74, 155], [255, 213, 74], [255, 138, 61]];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    const x0 = Math.max(0, x - RX), x1 = Math.min(W, x + RX + 1), y0 = Math.max(0, y - RY), y1 = Math.min(H, y + RY + 1);
+    let best = 1, bv = -1;
+    for (let k = 0; k < 4; k++) {
+      const S = conta[k], v = S[y1 * W1 + x1] - S[y0 * W1 + x1] - S[y1 * W1 + x0] + S[y0 * W1 + x0];
+      if (v > bv) { bv = v; best = k; }
+    }
+    // espaço em branco entre letras herda a cor da vizinhança; só a margem fica cinza
+    if (bv <= 0) { cor(i, [58, 58, 64]); niveis[i] = 9; continue; }
+    niveis[i] = best - 1;
+    cor(i, COR[best]);
+  }
+  ctx.putImageData(out, 0, 0);
+  // texto por cima, apagado, pra ver o que está em cada lugar
+  ctx.font = img.font; ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(255,255,255,.42)';
+  r.linhas.forEach((l, y) => [...l.texto].forEach((ch, x) => ctx.fillText(ch, img.pad + x * cw, img.linhaY(y))));
+  // os dois pontos-guia, contornados pra aparecerem sobre qualquer cor
+  for (const c of colunasGuia(r)) {
+    ctx.beginPath(); ctx.arc(img.pad + (c + 0.5) * cw, img.yc, 14 * 0.38, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#111'; ctx.stroke();
+  }
+
+  // leitura por linha: onde o decodificador viu relevo, e o que está escrito ali
+  const achados = []; let sujo = 0, total = 0;
+  r.linhas.forEach((l, y) => {
+    const y0 = img.linhaY(y), y1 = y0 + Math.round(img.lh * 0.7);
+    const cols = new Array(l.texto.length).fill(0);
+    for (let yy = y0; yy < y1; yy++) for (let x = 0; x < W; x++)
+      if (niveis[yy * W + x] === 1) { const c = Math.floor((x - img.pad) / cw); if (c >= 0 && c < cols.length) cols[c]++; }
+    // agrupa colunas vizinhas com relevo e fica com o maior grupo (mínimo 2 caracteres)
+    const grupos = []; let g = null;
+    cols.forEach((v, c) => {
+      if (v > img.lh * cw * 0.3) { if (g && c === g.fim + 1) g.fim = c; else grupos.push(g = { ini: c, fim: c }); }
+    });
+    const maior = grupos.filter(g => g.fim - g.ini >= 1).sort((a, b) => (b.fim - b.ini) - (a.fim - a.ini))[0];
+    if (maior) achados.push({ linha: y + 1, trecho: l.texto.slice(maior.ini, maior.fim + 1).trim() });
+    // mancha: relevo fora do lugar (tudo que não é fundo, exceto a palavra que deve saltar)
+    const [a, b] = l.marca ? [l.marca[0] - 1, l.marca[1] + 1] : [-1, -1];
+    for (let yy = y0; yy < y1; yy++) for (let x = 0; x < W; x++) {
+      const v = niveis[yy * W + x], c = Math.floor((x - img.pad) / cw);
+      if (v === 9 || (c >= a && c < b)) continue;
+      total++; if (v !== 0) sujo++;
+    }
+  });
+  const ms = Math.round(performance.now() - t0);
+  $('leitura').innerHTML = `Repetição do fundo: <b>${P} px</b> (${(P / cw).toFixed(1)} caracteres). ` +
+    `Fundo manchado: <b>${(100 * sujo / (total || 1)).toFixed(1)}%</b>. ` +
+    `Relevo encontrado em ${achados.length} linha(s): ` +
+    achados.map(a => `linha ${a.linha} <code>${esc(a.trecho)}</code>`).join(', ') + `. <span style="opacity:.6">(${ms} ms)</span>`;
+}
+
+// Enter gera na hora (e sorteia outra parede mesmo com a mesma frase)
+$('f').addEventListener('submit', e => { e.preventDefault(); clearTimeout(espera); ultima = chave(); render(); });
+
+$('reveal').addEventListener('click', e => {
+  const on = $('wall').classList.toggle('reveal');
+  e.currentTarget.setAttribute('aria-pressed', on);
+  e.currentTarget.textContent = on ? 'Esconder resposta' : 'Mostrar resposta';
+  if (atual) parede(atual);
+});
+
+$('copy').addEventListener('click', async e => {
+  if (!atual) return;
+  const txt = textoComPontos(atual);
+  try { await navigator.clipboard.writeText(txt); e.currentTarget.textContent = 'Copiado!'; }
+  catch { e.currentTarget.textContent = 'Não deu pra copiar'; }
+  setTimeout(() => (e.currentTarget.textContent = 'Copiar texto'), 1500);
+});
+
+$('png').addEventListener('click', () => {
+  if (!atual) return;
+  const a = document.createElement('a');
+  a.download = 'estereograma.png'; a.href = $('imagem').src; a.click();
+});
+
+// Sem botão: gera de novo quando a pessoa para de digitar (meio segundo sem teclar).
+// Só regera se as palavras mudaram (um espaço a mais não sorteia outra parede).
+let espera = null, ultima = null;
+const chave = () => $('frase').value.trim().split(/\s+/).join(' ');
+const atualizar = () => { clearTimeout(espera); if (chave() === ultima) return; ultima = chave(); render(); };
+$('frase').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(atualizar, 500); });
+
+// Paralelo/cruzado muda a parede (a palavra passa a repetir a cada P−1 ou P+1): gera de novo.
+const escolherOlhar = c => {
+  cruzado = c;
+  $('olhar-par').setAttribute('aria-pressed', !c); $('olhar-cruz').setAttribute('aria-pressed', c);
+  ultima = chave(); render();
+};
+$('olhar-par').addEventListener('click', () => cruzado && escolherOlhar(false));
+$('olhar-cruz').addEventListener('click', () => !cruzado && escolherOlhar(true));
+// Tamanho só muda a escala: mesma parede, outra largura de repetição.
+$('tamanho').addEventListener('input', e => { tamanho = +e.target.value; aplicarTamanho(); });
+
+atualizar();
+</script>
+</body>
+</html>

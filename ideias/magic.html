@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estereograma Mágico</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b675f;
+    --line: #d9d4c8; --accent: #2f5bd3; --accent-ink: #ffffff;
+    --hl: #ffd54a; --ok: #1f7a3a; --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #1f1f1c; --ink: #ecebe6; --muted: #a29e94;
+      --line: #38362f; --accent: #7a9cff; --accent-ink: #10131c;
+      --hl: #8a6d00; --ok: #6fd28f; --bad: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  form { display: flex; gap: 8px; margin-bottom: 16px; }
+  input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; font: inherit; color: var(--ink);
+         background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  button { padding: 10px 16px; font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer;
+           border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+  button.ghost { background: transparent; color: var(--accent); }
+  button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
+  .wall { background: #fff; color: #111; border: 1px solid var(--line); border-radius: 8px;
+          padding: 20px; overflow-x: auto; }
+  .wall pre { margin: 0; font: 16px/1.2 "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+  .wall mark { background: transparent; color: inherit; }
+  .guias { position: relative; height: 1.2em; font: 16px/1.2 "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+  .guias span { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%;
+                background: #111; transform: translate(-50%, -50%); }
+  .wall.reveal mark { background: #ffd54a; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  .conf { margin-left: auto; font-size: .9rem; }
+  .conf.ok { color: var(--ok); } .conf.bad { color: var(--bad); }
+  details { margin-top: 24px; color: var(--muted); }
+  details summary { cursor: pointer; color: var(--ink); }
+  .warn { color: var(--bad); font-size: .9rem; min-height: 1.4em; margin: 0 0 8px; }
+  .analise { margin-top: 32px; }
+  .analise h2, .imagem h2 { font-size: 1.15rem; margin: 0 0 4px; }
+  .imagem { margin-top: 32px; }
+  .img-wrap { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow-x: auto; }
+  #imagem { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .mapa-wrap { background: #1b1b1e; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+  #mapa { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 0; font-size: .85rem; color: var(--muted); }
+  .legenda i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .leitura { font-size: .9rem; margin: 10px 0 0; }
+  .leitura code { font: .9em "DejaVu Sans Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Estereograma Mágico</h1>
+  <p class="sub">Protótipo: a frase vira letras GRANDES que saltam de uma textura colorida (estilo "Olho Mágico").</p>
+  <form id="f"><input id="frase" type="text" value="te amo" aria-label="Frase escondida" autocomplete="off"></form>
+  <p class="warn" id="warn"></p>
+  <div class="img-wrap"><canvas id="cena" style="display:block;max-width:100%;height:auto;margin:0 auto"></canvas></div>
+  <section class="analise">
+    <h2>Análise da imagem</h2>
+    <div class="mapa-wrap"><canvas id="mapa" width="10" height="10"></canvas></div>
+    <p class="leitura" id="leitura">Analisando…</p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const PALETA = ['#e5484d', '#ffd54a', '#3fb950', '#2f5bd3', '#a371f7', '#ff8a3d', '#1fb5a8', '#f778ba', '#1d1d1b', '#ffffff'];
+const W = 960, Pfix = 180, D = 14;       // período ~ o mesmo do texto; letras saltam D px
+
+// Mapa de profundidade: a frase em letras grossas, quebrada em linhas que cabem depois da
+// primeira faixa (onde não pode haver relevo).
+function mapa(frase, H) {
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const palavras = frase.trim().split(/\s+/).filter(Boolean);
+  const larg = W - Pfix - 40;
+  let fs = 150, linhas;
+  for (; fs > 40; fs -= 6) {
+    ctx.font = `900 ${fs}px "DejaVu Sans", Arial, sans-serif`;
+    linhas = []; let atual = '';
+    for (const w of palavras) {
+      const t = atual ? atual + ' ' + w : w;
+      if (ctx.measureText(t).width <= larg) atual = t; else { if (atual) linhas.push(atual); atual = w; }
+    }
+    if (atual) linhas.push(atual);
+    if (linhas.every(l => ctx.measureText(l).width <= larg) && linhas.length * fs * 1.05 <= H - 40) break;
+  }
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  // bordas suaves: o deslocamento muda 1 px por vez em vez de saltar D px de uma vez, então a
+  // textura estica em vez de rasgar (o rasgo deixa a palavra visível a olho nu)
+  const blur = window.MAGIC_BLUR ?? 0;   // 3–6 testado: não reduziu o rasgo de forma mensurável
+  if (blur) ctx.filter = `blur(${blur}px)`;
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const x0 = Pfix + 20 + larg / 2, y0 = H / 2 - (linhas.length - 1) * fs * 1.05 / 2;
+  linhas.forEach((l, i) => ctx.fillText(l, x0, y0 + i * fs * 1.05));
+  const px = ctx.getImageData(0, 0, W, H).data, dep = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) dep[i] = Math.round(D * px[4 * i] / 255);
+  return dep;
+}
+
+// Textura: bolinhas coloridas de vários tamanhos, PERIÓDICA na horizontal (período P) para a
+// primeira faixa já casar com a segunda. Bolas grandes = alvo fácil pros olhos travarem.
+function textura(H) {
+  const cv = document.createElement('canvas'); cv.width = Pfix; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fbf6ea'; ctx.fillRect(0, 0, Pfix, H);
+  const n = Math.round(Pfix * H / 180 * (16 / (window.MAGIC_RMAX || 8)) ** 1.6);
+  for (let k = 0; k < n; k++) {
+    const rmax = window.MAGIC_RMAX || 8, r = Math.min(3, rmax / 2) + Math.random() ** 2 * (rmax - Math.min(3, rmax / 2)), x = Math.random() * Pfix, y = Math.random() * H;
+    ctx.fillStyle = PALETA[Math.floor(Math.random() * PALETA.length)];
+    for (const dx of [-Pfix, 0, Pfix]) { ctx.beginPath(); ctx.arc(x + dx, y, r, 0, 7); ctx.fill(); }
+  }
+  return ctx.getImageData(0, 0, Pfix, H).data;
+}
+
+function gerar(frase) {
+  if (!frase.trim()) return { erro: 'Digite pelo menos uma palavra.' };
+  const H = 360, dep = mapa(frase, H), tex = textura(H);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(W, H), o = img.data;
+  const sep = new Int16Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, s = Pfix - dep[i]; sep[i] = s;
+    if (x < s) { const j = 4 * (y * Pfix + (x % Pfix)); o.set(tex.subarray(j, j + 4), 4 * i); }
+    else o.set(o.subarray(4 * (i - s), 4 * (i - s) + 4), 4 * i);    // copia de s pixels à esquerda
+  }
+  ctx.putImageData(img, 0, 0);
+  return { cv, dep, sep, P: Pfix, D, W, H };
+}
+function conferir(r) {    // todo pixel depois da primeira faixa repete na distância pedida
+  const d = r.cv.getContext('2d').getImageData(0, 0, r.W, r.H).data;
+  for (let y = 0; y < r.H; y++) for (let x = r.P; x < r.W; x++) {
+    const i = y * r.W + x, j = i - r.sep[i];
+    for (let c = 0; c < 3; c++) if (d[4 * i + c] !== d[4 * j + c]) return false;
+  }
+  return true;
+}
+
+// ---- decodificador da página, sem mudanças ----
+function analisar(cv) {
+  const W = cv.width, H = cv.height;
+  const px = cv.getContext('2d').getImageData(0, 0, W, H).data;
+  const I = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) I[i] = 1 - (px[4*i] * 0.299 + px[4*i+1] * 0.587 + px[4*i+2] * 0.114) / 255;
+
+  let P = 0, melhor = Infinity;
+  for (let d = Math.floor(W / 12); d <= Math.floor(W / 3); d++) {
+    let s = 0, n = 0;
+    for (let y = 0; y < H; y += 2) { const r = y * W; for (let x = d; x < W; x += 2) { s += Math.abs(I[r + x] - I[r + x - d]); n++; } }
+    if (s / n < melhor) { melhor = s / n; P = d; }
+  }
+
+  const dmin = Math.round(P * 0.75), dmax = Math.round(P * 1.1), R = 5, W1 = W + 1;
+  const custo = new Float32Array(W * H).fill(Infinity), disp = new Int16Array(W * H);
+  // primeira faixa (x < dmax): não tem nada à esquerda, então compara com a cópia à DIREITA
+  const faixa = Math.min(W, dmax + R + 1);
+  const custoE = new Float32Array(faixa * H).fill(Infinity), dispE = new Int16Array(faixa * H);
+  const S = new Float64Array(W1 * (H + 1));
+  const caixa = (x, y) => {
+    const x0 = Math.max(0, x - R), x1 = Math.min(W, x + R + 1), y0 = Math.max(0, y - R), y1 = Math.min(H, y + R + 1);
+    return S[y1 * W1 + x1] - S[y0 * W1 + x1] - S[y1 * W1 + x0] + S[y0 * W1 + x0];
+  };
+  for (let d = dmin; d <= dmax; d++) {
+    for (let y = 0; y < H; y++) {
+      let linha = 0; const r = y * W;
+      for (let x = 0; x < W; x++) {
+        linha += x < d ? 1 : Math.abs(I[r + x] - I[r + x - d]);
+        S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha;
+      }
+    }
+    for (let y = 0; y < H; y++) for (let x = d; x < W; x++) {
+      const c = caixa(x, y), i = y * W + x;
+      if (c < custo[i]) { custo[i] = c; disp[i] = d; }
+    }
+    for (let y = 0; y < H; y++) {
+      let linha = 0; const r = y * W;
+      for (let x = 0; x < faixa; x++) {
+        linha += x + d < W ? Math.abs(I[r + x] - I[r + x + d]) : 1;
+        S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha;
+      }
+    }
+    for (let y = 0; y < H; y++) for (let x = 0; x < dmax; x++) {
+      const c = caixa(x, y), i = y * faixa + x;
+      if (c < custoE[i]) { custoE[i] = c; dispE[i] = d; }
+    }
+  }
+  // janelas sem tinta casam com qualquer deslocamento: marcar como "sem informação"
+  for (let y = 0; y < H; y++) {
+    let linha = 0; const r = y * W;
+    for (let x = 0; x < W; x++) { linha += I[r + x]; S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + linha; }
+  }
+  const prof = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    // Na primeira faixa o ponto é a cópia da ESQUERDA do par; o relevo do par já aparece na
+    // cópia da direita. Então ali só mostra fundo ou "atrás", senão a palavra apareceria duas vezes.
+    prof[i] = caixa(x, y) < 2 ? NaN : x < dmax ? Math.min(0, P - dispE[y * faixa + x]) : P - disp[i];
+  }
+  return { P, prof, W, H };
+}
+
+
+function mostrarAnalise(r) {
+  const t0 = performance.now();
+  const { P, prof, W, H } = analisar(r.cv);
+  const cv = $('mapa'), ctx = cv.getContext('2d'); cv.width = W; cv.height = H;
+  const out = ctx.createImageData(W, H);
+  // nível por pixel: 0 fundo, 1 letra (≈ D px mais perto), 2 outra coisa; -1 sem informação/faixa
+  const dmax = Math.round(P * 1.1);
+  let fundo = 0, fundoSujo = 0, letra = 0, letraAchada = 0, inter = 0, uniao = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, p = prof[i];
+    let c = [58, 58, 64];
+    if (!Number.isNaN(p) && x >= dmax) {
+      const n = Math.abs(p) <= D / 2 ? 0 : Math.abs(p - D) <= D / 2 ? 1 : 2;
+      c = [[43, 74, 155], [255, 213, 74], [229, 72, 77]][n];
+      const quer = r.dep[i] > D / 2;
+      if (quer) { letra++; if (n === 1) letraAchada++; } else { fundo++; if (n !== 0) fundoSujo++; }
+      if (quer && n === 1) inter++; if (quer || n === 1) uniao++;
+    }
+    out.data.set([...c, 255], 4 * i);
+  }
+  ctx.putImageData(out, 0, 0);
+  const res = { P, fundo_manchado: +(100 * fundoSujo / fundo).toFixed(1), letras_achadas: +(100 * letraAchada / letra).toFixed(1),
+    iou: +(inter / uniao).toFixed(3), ms: Math.round(performance.now() - t0) };
+  $('leitura').innerHTML = `Repetição do fundo: <b>${P} px</b>. Fundo manchado: <b>${res.fundo_manchado}%</b>. Letras achadas: <b>${res.letras_achadas}%</b> dos pixels (IoU ${res.iou}). <span style="opacity:.6">(${res.ms} ms)</span>`;
+  window.ULTIMA_ANALISE = res;
+  return res;
+}
+let atual = null;
+function render() {
+  $('warn').textContent = '';
+  const r = gerar($('frase').value); if (r.erro) { $('warn').textContent = r.erro; return; }
+  atual = r; const c = $('cena'); c.width = r.W; c.height = r.H; c.getContext('2d').drawImage(r.cv, 0, 0);
+  $('leitura').textContent = 'Analisando…'; setTimeout(() => mostrarAnalise(r), 20);
+}
+let espera = null;
+$('frase').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(render, 500); });
+$('f').addEventListener('submit', e => { e.preventDefault(); render(); });
+render();
+</script>
+</body>
+</html>
