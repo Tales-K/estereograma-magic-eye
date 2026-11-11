@@ -75,6 +75,7 @@
       <button class="ghost" id="olhar-par" type="button" aria-pressed="true">Olhar paralelo</button>
       <button class="ghost" id="olhar-cruz" type="button" aria-pressed="false">Olhar cruzado</button>
     </span>
+    <button class="ghost" id="cores" type="button" aria-pressed="true">Com cor</button>
     <label class="tam">Tamanho <input id="tamanho" type="range" min="10" max="24" step="1" value="16"></label>
     <span class="dica" id="dica-tam"></span>
   </div>
@@ -326,7 +327,7 @@ function parede(r) {
     while (i < texto.length) {
       let j = i; while (j < texto.length && cores[j] === cores[i]) j++;
       const t = esc(texto.slice(i, j));
-      h += cores[i] < 0 ? t : `<span style="background:${PALETA[cores[i]]}">${t}</span>`; i = j;
+      h += cores[i] < 0 || !comCor ? t : `<span style="background:${PALETA[cores[i]]}">${t}</span>`; i = j;
     }
     return h;
   };
@@ -357,7 +358,7 @@ function _resto(r) {
 }
 
 // ---- Tamanho e jeito de olhar -----------------------------------------------
-let cruzado = false, tamanho = 16;
+let cruzado = false, tamanho = 16, comCor = true;
 
 // Largura de uma repetição na tela. Pra olhar paralelo ela tem que ser menor que a distância
 // entre os olhos (~6 cm); entre 3 e 5 cm costuma ser o mais confortável.
@@ -431,7 +432,7 @@ function desenhar(linhas, fs, guias = null) {
   // inteiro, pra repetição em pixels ficar igual à do texto)
   const bx = x => Math.round(pad + x * cw);
   linhas.forEach((l, y) => (l.cores || []).forEach((k, x) => {
-    if (k < 0) return;
+    if (k < 0 || !comCor) return;
     ctx.fillStyle = PALETA[k]; ctx.fillRect(bx(x), linhaY(y) + 1, bx(x + 1) - bx(x), lh - 2);
   }));
   ctx.fillStyle = '#111'; ctx.font = font; ctx.textBaseline = 'top';
@@ -624,6 +625,13 @@ const escolherOlhar = c => {
 };
 $('olhar-par').addEventListener('click', () => cruzado && escolherOlhar(false));
 $('olhar-cruz').addEventListener('click', () => !cruzado && escolherOlhar(true));
+// Cor liga/desliga os azulejos: mesma parede, só redesenha (texto, imagem e análise).
+$('cores').addEventListener('click', e => {
+  comCor = !comCor;
+  e.currentTarget.setAttribute('aria-pressed', comCor);
+  e.currentTarget.textContent = comCor ? 'Com cor' : 'Sem cor';
+  if (atual) { parede(atual); _resto(atual); }
+});
 // Tamanho só muda a escala: mesma parede, outra largura de repetição.
 $('tamanho').addEventListener('input', e => { tamanho = +e.target.value; aplicarTamanho(); });
 
