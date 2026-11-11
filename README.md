@@ -1,5 +1,7 @@
 # Estereograma de Palavras
 
+**Abrir o gerador:** https://tales-k.github.io/estereograma-magic-eye/
+
 Uma página só (`index.html`, sem servidor nem dependências) que esconde uma frase num
 estereograma de texto: cada palavra fica numa linha, no meio de palavras aleatórias, e salta em 3D
 quando você desfoca os olhos (olhar paralelo) ou cruza os olhos (olhar cruzado).
